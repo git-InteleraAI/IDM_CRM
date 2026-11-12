@@ -1,59 +1,91 @@
-import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom'
+import { Routes, Route, Navigate, Link } from "react-router-dom";
 
-function LoginPage() {
-  return (
-    <div className="p-10 text-center">
-      <h1 className="text-3xl font-bold">Intelera DM Portal</h1>
-      <p className="mt-3 text-slate-600">Login Page</p>
-    </div>
-  )
-}
+import LoginPage from "./features/auth/LoginPage";
+import ProtectedRoute from "./features/auth/ProtectedRoute";
+import LogoutButton from "./features/auth/LogoutButton";
 
 function AdminDashboard() {
   return (
-    <div className="p-10">
-      <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-      <p className="mt-2 text-slate-600">
-        Manage clients, campaigns and leads.
-      </p>
+    <div className="min-h-screen bg-slate-100 p-10">
+      <div className="mx-auto max-w-6xl">
+        <div className="flex items-center justify-between rounded-xl bg-white p-6 shadow-sm">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">
+              Admin Dashboard
+            </h1>
+            <p className="mt-2 text-slate-600">
+              Manage clients, campaigns and leads.
+            </p>
+          </div>
+
+          <LogoutButton />
+        </div>
+      </div>
     </div>
-  )
+  );
 }
 
 function ClientDashboard() {
   return (
-    <div className="p-10">
-      <h1 className="text-2xl font-bold">Client Dashboard</h1>
-      <p className="mt-2 text-slate-600">
-        View campaigns and manage leads.
-      </p>
+    <div className="min-h-screen bg-slate-100 p-10">
+      <div className="mx-auto max-w-6xl">
+        <div className="flex items-center justify-between rounded-xl bg-white p-6 shadow-sm">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">
+              Client Dashboard
+            </h1>
+            <p className="mt-2 text-slate-600">
+              View campaigns and manage leads.
+            </p>
+          </div>
+
+          <LogoutButton />
+        </div>
+      </div>
     </div>
-  )
+  );
 }
 
 function NotFoundPage() {
   return (
     <div className="p-10 text-center">
       <h1 className="text-2xl font-bold">404 - Page Not Found</h1>
+
       <Link to="/login" className="mt-4 inline-block text-blue-600">
         Return to Login
       </Link>
     </div>
-  )
+  );
 }
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Navigate to="/login" replace />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/admin" element={<AdminDashboard />} />
-        <Route path="/client" element={<ClientDashboard />} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
-    </BrowserRouter>
-  )
+    <Routes>
+      <Route path="/" element={<Navigate to="/login" replace />} />
+
+      <Route path="/login" element={<LoginPage />} />
+
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute allowedRole="admin">
+            <AdminDashboard />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/client"
+        element={
+          <ProtectedRoute allowedRole="client">
+            <ClientDashboard />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route path="*" element={<NotFoundPage />} />
+    </Routes>
+  );
 }
 
-export default App
+export default App;
