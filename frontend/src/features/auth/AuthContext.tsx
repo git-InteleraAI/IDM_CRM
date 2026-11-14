@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -39,6 +40,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
 
+  const currentUserId = session?.user?.id ?? null;
+
   useEffect(() => {
     const subscription = authService.onAuthStateChange((newSession) => {
       setSession(newSession);
@@ -68,28 +71,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
     let isActive = true;
 
     const loadProfile = async () => {
-      if (!session?.user) {
+      if (!currentUserId) {
         setProfile(null);
         setProfileError(null);
         setProfileLoading(false);
         return;
       }
 
-      setProfile(null);
-      setProfileError(null);
+      // Indicate loading without clearing an already-loaded profile (stale-while-revalidate)
       setProfileLoading(true);
 
       try {
-        const userProfile = await profileService.getProfile(session.user.id);
+        const userProfile = await profileService.getProfile(currentUserId);
 
         if (isActive) {
           setProfile(userProfile);
+          setProfileError(null);
         }
       } catch (error) {
         console.error("Failed to load user profile:", error);
 
         if (isActive) {
-          setProfile(null);
           setProfileError(
             error instanceof Error
               ? error.message
@@ -108,7 +110,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return () => {
       isActive = false;
     };
-  }, [session?.user.id]);
+  }, [currentUserId]);
 
   const login = useCallback(async (email: string, password: string) => {
     await authService.login({ email, password });
@@ -116,18 +118,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const logout = useCallback(async () => {
     await authService.logout();
+    setProfile(null);
+    setSession(null);
   }, []);
 
-  const value: AuthContextType = {
-    session,
-    user: session?.user ?? null,
-    profile,
-    loading,
-    profileLoading,
-    profileError,
-    login,
-    logout,
-  };
+  const value = useMemo<AuthContextType>(
+    () => ({
+      session,
+      user: session?.user ?? null,
+      profile,
+      loading,
+      profileLoading,
+      profileError,
+      login,
+      logout,
+    }),
+    [session, profile, loading, profileLoading, profileError, login, logout]
+  );
 
   return (
     <AuthContext.Provider value={value}>
@@ -136,6 +143,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   );
 }
 
+// This module intentionally exports the hook alongside the provider.
+// Keep this local exception until the auth context is split into modules.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth(): AuthContextType {
   const context = useContext(AuthContext);
 

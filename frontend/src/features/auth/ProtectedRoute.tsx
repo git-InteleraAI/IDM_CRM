@@ -20,7 +20,10 @@ export default function ProtectedRoute({
     profileError,
   } = useAuth();
 
-  if (loading || (user && profileLoading)) {
+  // Show blocking verification screen only during initial session check
+  // or when an authenticated user's profile has not yet been loaded.
+  // A background profile refresh when a profile is already present must not unmount children.
+  if (loading || (!profile && profileLoading)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <p className="text-slate-600">Verifying access...</p>

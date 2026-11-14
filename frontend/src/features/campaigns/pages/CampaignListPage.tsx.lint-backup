@@ -1,0 +1,391 @@
+import { useEffect, useMemo, useState } from "react";
+import {
+  clientService,
+  type Client,
+} from "../../clients/services/client.service";
+import CampaignModal from "../components/CampaignModal";
+import { campaignService } from "../services/campaign.service";
+import type {
+  Campaign,
+  CampaignStatus,
+} from "../types/campaign.types";
+
+export default function CampaignListPage() {
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [editingCampaign, setEditingCampaign] =
+    useState<Campaign | null>(null);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const [campaignData, clientData] = await Promise.all([
+        campaignService.getAllCampaigns(),
+        clientService.getAllClients(),
+      ]);
+
+      setCampaigns(campaignData);
+      setClients(clientData);
+    } catch (err) {
+      console.error("Failed to load campaigns:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load campaigns."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void fetchData();
+  }, []);
+
+  const filteredCampaigns = useMemo(() => {
+    return campaigns.filter((campaign) => {
+      const clientName =
+        clients.find((client) => client.id === campaign.client_id)
+          ?.name ?? "";
+
+      const matchesSearch =
+        campaign.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        clientName.toLowerCase().includes(searchTerm.toLowerCase());
+
+      const matchesStatus =
+        statusFilter === "all" || campaign.status === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [campaigns, clients, searchTerm, statusFilter]);
+
+  const draftCount = campaigns.filter(
+    (campaign) => campaign.status === "draft"
+  ).length;
+
+  const activeCount = campaigns.filter(
+    (campaign) => campaign.status === "active"
+  ).length;
+
+  const completedCount = campaigns.filter(
+    (campaign) => campaign.status === "completed"
+  ).length;
+
+  const handleSaved = (savedCampaign: Campaign) => {
+    setCampaigns((previous) => {
+      const exists = previous.some(
+        (campaign) => campaign.id === savedCampaign.id
+      );
+
+      if (exists) {
+        return previous.map((campaign) =>
+          campaign.id === savedCampaign.id ? savedCampaign : campaign
+        );
+      }
+
+      return [savedCampaign, ...previous];
+    });
+  };
+
+  const handleStatusChange = async (
+    campaign: Campaign,
+    newStatus: CampaignStatus
+  ) => {
+    if (campaign.status === newStatus) return;
+
+    const confirmed = window.confirm(
+      `Change "${campaign.name}" status to ${newStatus}?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const updated = await campaignService.updateCampaignStatus(
+        campaign.id,
+        newStatus
+      );
+
+      setCampaigns((previous) =>
+        previous.map((item) =>
+          item.id === updated.id ? updated : item
+        )
+      );
+    } catch (err) {
+      console.error("Failed to update campaign status:", err);
+      window.alert(
+        err instanceof Error
+          ? err.message
+          : "Unable to update campaign status."
+      );
+    }
+  };
+
+  const formatDate = (date: string | null) => {
+    if (!date) return "Never";
+
+    return new Date(date).toLocaleString("en-IN", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  };
+
+  const getStatusClass = (status: CampaignStatus) => {
+    switch (status) {
+      case "active":
+        return "bg-green-100 text-green-700";
+      case "completed":
+        return "bg-slate-200 text-slate-700";
+      default:
+        return "bg-amber-100 text-amber-700";
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Page Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">
+            Campaign Management
+          </h1>
+          <p className="mt-2 text-sm text-slate-500">
+            Create and manage client campaigns and Google Sheets connections.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            setEditingCampaign(null);
+            setShowModal(true);
+          }}
+          disabled={clients.every((client) => client.status !== "active")}
+          className="rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          + Create Campaign
+        </button>
+      </div>
+
+      {/* Statistics */}
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Total Campaigns</p>
+          <h2 className="mt-2 text-3xl font-bold text-slate-900">
+            {campaigns.length}
+          </h2>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Active</p>
+          <h2 className="mt-2 text-3xl font-bold text-green-600">
+            {activeCount}
+          </h2>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Draft</p>
+          <h2 className="mt-2 text-3xl font-bold text-amber-600">
+            {draftCount}
+          </h2>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Completed</p>
+          <h2 className="mt-2 text-3xl font-bold text-slate-600">
+            {completedCount}
+          </h2>
+        </div>
+      </div>
+
+      {/* Campaign Table */}
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-4 border-b border-slate-200 p-5 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">
+              All Campaigns
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Each campaign is connected to one Google Spreadsheet.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search campaigns or clients..."
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            />
+
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm outline-none focus:border-blue-500"
+            >
+              <option value="all">All Statuses</option>
+              <option value="draft">Draft</option>
+              <option value="active">Active</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th className="px-5 py-4 font-semibold">Campaign</th>
+                <th className="px-5 py-4 font-semibold">Client</th>
+                <th className="px-5 py-4 font-semibold">Status</th>
+                <th className="px-5 py-4 font-semibold">Sync Interval</th>
+                <th className="px-5 py-4 font-semibold">Last Synced</th>
+                <th className="px-5 py-4 text-right font-semibold">Actions</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-16 text-center text-slate-500">
+                    Loading campaigns...
+                  </td>
+                </tr>
+              ) : error ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-16 text-center">
+                    <p className="font-medium text-red-600">
+                      Failed to load campaigns
+                    </p>
+                    <p className="mt-2 text-sm text-slate-500">{error}</p>
+                    <button
+                      type="button"
+                      onClick={() => void fetchData()}
+                      className="mt-3 text-sm font-semibold text-blue-600 hover:underline"
+                    >
+                      Try again
+                    </button>
+                  </td>
+                </tr>
+              ) : filteredCampaigns.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-16 text-center">
+                    <h3 className="font-semibold text-slate-800">
+                      No campaigns found
+                    </h3>
+                    <p className="mt-2 text-sm text-slate-500">
+                      {searchTerm || statusFilter !== "all"
+                        ? "Try changing your search or filters."
+                        : "Create your first campaign to get started."}
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                filteredCampaigns.map((campaign) => {
+                  const client = clients.find(
+                    (item) => item.id === campaign.client_id
+                  );
+
+                  return (
+                    <tr
+                      key={campaign.id}
+                      className="border-t border-slate-100 hover:bg-slate-50"
+                    >
+                      <td className="px-5 py-4">
+                        <p className="font-semibold text-slate-800">
+                          {campaign.name}
+                        </p>
+                        <a
+                          href={campaign.sheet_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1 inline-block max-w-48 truncate text-xs text-blue-600 hover:underline"
+                          title={campaign.sheet_url}
+                        >
+                          Open Google Sheet
+                        </a>
+                      </td>
+
+                      <td className="px-5 py-4 text-slate-600">
+                        {client?.name ?? "Unknown client"}
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${getStatusClass(
+                            campaign.status
+                          )}`}
+                        >
+                          {campaign.status}
+                        </span>
+                      </td>
+
+                      <td className="px-5 py-4 text-slate-600">
+                        Every {campaign.sync_interval_minutes} min
+                      </td>
+
+                      <td className="px-5 py-4 text-slate-600">
+                        {formatDate(campaign.last_synced_at)}
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <div className="flex flex-col items-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingCampaign(campaign);
+                              setShowModal(true);
+                            }}
+                            className="rounded-lg px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50"
+                          >
+                            Edit
+                          </button>
+
+                          <select
+                            aria-label={`Change status for ${campaign.name}`}
+                            value={campaign.status}
+                            onChange={(event) =>
+                              void handleStatusChange(
+                                campaign,
+                                event.target.value as CampaignStatus
+                              )
+                            }
+                            className="max-w-32 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                          >
+                            <option value="draft">Draft</option>
+                            <option value="active">Active</option>
+                            <option value="completed">Completed</option>
+                          </select>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Create / Edit Campaign Modal */}
+      {showModal && (
+        <CampaignModal
+          clients={clients}
+          campaign={editingCampaign}
+          onClose={() => {
+            setShowModal(false);
+            setEditingCampaign(null);
+          }}
+          onSaved={handleSaved}
+        />
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,312 @@
+import { useEffect, useState, type FormEvent } from "react";
+import type { Client } from "../../clients/services/client.service";
+import { campaignService } from "../services/campaign.service";
+import type {
+  Campaign,
+  CampaignStatus,
+} from "../types/campaign.types";
+
+interface CampaignModalProps {
+  clients: Client[];
+  campaign: Campaign | null;
+  onClose: () => void;
+  onSaved: (campaign: Campaign) => void;
+}
+
+export default function CampaignModal({
+  clients,
+  campaign,
+  onClose,
+  onSaved,
+}: CampaignModalProps) {
+  const [clientId, setClientId] = useState(
+    campaign?.client_id ?? ""
+  );
+  const [name, setName] = useState(campaign?.name ?? "");
+  const [sheetUrl, setSheetUrl] = useState(
+    campaign?.sheet_url ?? ""
+  );
+  const [worksheetGid, setWorksheetGid] = useState(
+    campaign?.worksheet_gid ?? ""
+  );
+  const [interval, setInterval] = useState(
+    String(campaign?.sync_interval_minutes ?? 30)
+  );
+  const [status, setStatus] = useState<CampaignStatus>(
+    campaign?.status ?? "draft"
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!campaign && !clientId && clients.length > 0) {
+      const firstActiveClient = clients.find(
+        (client) => client.status === "active"
+      );
+      if (firstActiveClient) {
+        setClientId(firstActiveClient.id);
+      }
+    }
+  }, [clients, campaign, clientId]);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!clientId) {
+      setError("Please select a client.");
+      return;
+    }
+
+    if (!name.trim()) {
+      setError("Campaign name is required.");
+      return;
+    }
+
+    const intervalValue = Number(interval);
+
+    if (
+      !Number.isInteger(intervalValue) ||
+      intervalValue < 5 ||
+      intervalValue > 1440
+    ) {
+      setError("Sync interval must be between 5 and 1440 minutes.");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      setError(null);
+
+      const details = campaignService.extractSpreadsheetDetails(sheetUrl);
+
+      const input = {
+        client_id: clientId,
+        name: name.trim(),
+        status,
+        sheet_url: sheetUrl.trim(),
+        spreadsheet_id: details.spreadsheetId,
+        worksheet_gid: worksheetGid.trim() || details.worksheetGid,
+        sync_interval_minutes: intervalValue,
+      };
+
+      const savedCampaign = campaign
+        ? await campaignService.updateCampaign(campaign.id, input)
+        : await campaignService.createCampaign(input);
+
+      onSaved(savedCampaign);
+      onClose();
+    } catch (err) {
+      console.error("Failed to save campaign:", err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to save campaign. Please try again."
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const activeClients = clients.filter(
+    (client) => client.status === "active"
+  );
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !submitting) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="campaign-modal-title"
+        className="my-auto w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl"
+      >
+        <div className="mb-6">
+          <h2
+            id="campaign-modal-title"
+            className="text-xl font-bold text-slate-900"
+          >
+            {campaign ? "Edit Campaign" : "Create New Campaign"}
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Configure a client campaign and its Google Spreadsheet.
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label
+              htmlFor="campaign-client"
+              className="mb-2 block text-sm font-medium text-slate-700"
+            >
+              Select Client
+            </label>
+
+            <select
+              id="campaign-client"
+              value={clientId}
+              onChange={(event) => setClientId(event.target.value)}
+              disabled={submitting || Boolean(campaign)}
+              required
+              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            >
+              <option value="">Choose a client</option>
+              {activeClients.map((client) => (
+                <option key={client.id} value={client.id}>
+                  {client.name}
+                </option>
+              ))}
+            </select>
+            {campaign && (
+              <p className="mt-1 text-xs text-slate-500">
+                Client assignment cannot be changed after creation.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label
+              htmlFor="campaign-name"
+              className="mb-2 block text-sm font-medium text-slate-700"
+            >
+              Campaign Name
+            </label>
+            <input
+              id="campaign-name"
+              type="text"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="e.g. November Lead Generation"
+              required
+              disabled={submitting}
+              className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="campaign-sheet-url"
+              className="mb-2 block text-sm font-medium text-slate-700"
+            >
+              Google Sheets URL
+            </label>
+            <input
+              id="campaign-sheet-url"
+              type="url"
+              value={sheetUrl}
+              onChange={(event) => setSheetUrl(event.target.value)}
+              placeholder="https://docs.google.com/spreadsheets/d/..."
+              required
+              disabled={submitting}
+              className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              One spreadsheet URL represents one portal campaign.
+            </p>
+          </div>
+
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div>
+              <label
+                htmlFor="campaign-gid"
+                className="mb-2 block text-sm font-medium text-slate-700"
+              >
+                Worksheet GID (Optional)
+              </label>
+              <input
+                id="campaign-gid"
+                type="text"
+                value={worksheetGid}
+                onChange={(event) => setWorksheetGid(event.target.value)}
+                placeholder="e.g. 0"
+                disabled={submitting}
+                className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Automatically extracted from URL when available.
+              </p>
+            </div>
+
+            <div>
+              <label
+                htmlFor="campaign-interval"
+                className="mb-2 block text-sm font-medium text-slate-700"
+              >
+                Sync Interval (Minutes)
+              </label>
+              <input
+                id="campaign-interval"
+                type="number"
+                min="5"
+                max="1440"
+                step="1"
+                value={interval}
+                onChange={(event) => setInterval(event.target.value)}
+                required
+                disabled={submitting}
+                className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label
+              htmlFor="campaign-status"
+              className="mb-2 block text-sm font-medium text-slate-700"
+            >
+              Campaign Status
+            </label>
+            <select
+              id="campaign-status"
+              value={status}
+              onChange={(event) =>
+                setStatus(event.target.value as CampaignStatus)
+              }
+              disabled={submitting}
+              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            >
+              <option value="draft">Draft</option>
+              <option value="active">Active</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+
+          {error && (
+            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 border-t border-slate-100 pt-5">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="submit"
+              disabled={submitting || activeClients.length === 0}
+              className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {submitting
+                ? "Saving..."
+                : campaign
+                  ? "Save Changes"
+                  : "Create Campaign"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
